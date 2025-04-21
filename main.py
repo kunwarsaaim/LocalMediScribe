@@ -12,7 +12,7 @@ from fastrtc import (
 
 from services.ollama_service import OllamaService
 from services.transcriber import Transcriber
-from utils.templates import SYSTEM_PROMPT, get_template_with_date
+from utils.templates import SYSTEM_PROMPT, get_template_with_date, save_custom_template
 
 # Configure logging
 logging.basicConfig(
@@ -94,7 +94,12 @@ class MedicalScribeApp:
     def reset_session_callback(self):
         """Function to reset the session"""
         self.transcriber.clear_buffers()
-        return ""
+        # Return empty strings to clear transcript and note displays
+        return (
+            "",
+            "",
+            gr.update(visible=False),
+        )  # Clear transcript, note output, and hide note buttons
 
     def change_models_callback(self, transcription_model, ollama_model):
         """Function to change models based on dropdown selections"""
@@ -233,6 +238,19 @@ class MedicalScribeApp:
         finally:
             self.is_generating_note = False
 
+    def save_template_as_default(self, template_text):
+        """Function to save the current template as the default template"""
+        if not template_text:
+            return "Template is empty. Cannot save."
+
+        success = save_custom_template(template_text)
+        if success:
+            logger.info("Default template updated successfully")
+            return "Template saved as default successfully!"
+        else:
+            logger.error("Failed to save default template")
+            return "Error: Failed to save template as default."
+
     def build_and_launch_ui(self):
         """Build and launch the Gradio UI"""
         server_name = os.getenv("SERVER_NAME", "localhost")
@@ -297,11 +315,11 @@ class MedicalScribeApp:
                              <style>
                                .loading-spinner {
                                  border: 5px solid rgba(0, 0, 0, 0.1);
-                                 width: 36px;
-                                 height: 36px;
-                                 border-radius: 50%;
-                                 border-left-color: #09f;
-                                 animation: spin 1s ease infinite;
+                                 width=36px;
+                                 height=36px;
+                                 border-radius=50%;
+                                 border-left-color=#09f;
+                                 animation=spin 1s ease infinite;
                                }
                                @keyframes spin {
                                  0% { transform: rotate(0deg); }
@@ -330,6 +348,14 @@ class MedicalScribeApp:
                         interactive=True,
                         value=self.default_template,
                         lines=15,
+                    )
+
+                    # Add button to save template as default
+                    save_template_btn = gr.Button("Save as Default Template")
+                    save_template_btn.click(
+                        fn=self.save_template_as_default,
+                        inputs=[template],
+                        outputs=[save_status],
                     )
 
             audio.stream(
@@ -364,7 +390,12 @@ class MedicalScribeApp:
                 outputs=[model_status],
             )
             finish_btn.click(fn=self.save_session_callback, outputs=[save_status])
-            reset_btn.click(fn=self.reset_session_callback, outputs=[save_status])
+
+            # Update the reset button to clear transcript, note output, and hide buttons
+            reset_btn.click(
+                fn=self.reset_session_callback,
+                outputs=[transcript, note_output, note_buttons_row],
+            )
 
             # Generate note button with output and UI update
             generate_note_btn.click(
