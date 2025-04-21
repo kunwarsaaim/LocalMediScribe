@@ -4,3 +4,8 @@
 .DS_STORE
 __pycache__/
 *.py[cod]
+venv/
+.env/
+
+# Custom configuration files
+config/template_config.json
