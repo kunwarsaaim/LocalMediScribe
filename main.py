@@ -1,8 +1,10 @@
 import datetime
 import logging
 import os
+import wave
 
 import gradio as gr
+import numpy as np
 from fastrtc import (
     AlgoOptions,
     ReplyOnPause,
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 class MedicalScribeApp:
     # Available models
     TRANSCRIPTION_MODELS = [
+        "nyrahealth/CrisperWhisper",
         "openai/whisper-large-v3-turbo",
         "openai/whisper-medium",
         "openai/whisper-small",
@@ -34,7 +37,7 @@ class MedicalScribeApp:
 
     def __init__(self):
         # Default models
-        self.current_transcription_model = "openai/whisper-large-v3-turbo"
+        self.current_transcription_model = "nyrahealth/CrisperWhisper"
         self.current_ollama_model = "gemma3:4b"
 
         self.default_template = get_template_with_date()
@@ -44,6 +47,8 @@ class MedicalScribeApp:
         logger.info("Initializing FastRTC stream")
 
         self.is_generating_note = False
+        self.current_session_id = None
+        self.current_note = None
 
     def initialize_services(self):
         """Initialize or reinitialize services with selected models"""
@@ -83,17 +88,117 @@ class MedicalScribeApp:
             logger.error(f"Error initializing services: {e}")
             return f"Error loading models: {str(e)}"
 
+    def create_session_directory(self):
+        """
+        Create a unique session directory for the current session
+
+        Returns:
+            tuple: (session_id, session_dir_path)
+        """
+        # Create a timestamp-based session ID if we don't have one yet
+        if not self.current_session_id:
+            self.current_session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        base_dir = "saved_sessions"
+        session_dir = os.path.join(base_dir, f"session_{self.current_session_id}")
+
+        # Create the directory if it doesn't exist
+        if not os.path.exists(session_dir):
+            os.makedirs(session_dir)
+            logger.info(f"Created new session directory: {session_dir}")
+
+        return self.current_session_id, session_dir
+
     def save_session_callback(self):
         """Function to handle the Save button click"""
-        paths = self.transcriber.save_session()
-        if paths:
-            transcript_path, audio_path = paths
-            return f"Session saved:\nTranscript: {transcript_path}\nAudio: {audio_path}"
-        return "Nothing to save"
+        if not self.transcriber.transcript_buffer:
+            return "Nothing to save: No transcript available"
+
+        # Create a session directory
+        session_id, session_dir = self.create_session_directory()
+
+        # Save transcript to the session directory
+        transcript_path = os.path.join(session_dir, "transcript.txt")
+        with open(transcript_path, "w") as f:
+            f.write(self.transcriber.transcript_buffer)
+
+        # Save audio to the session directory
+        audio_path = os.path.join(session_dir, "audio.wav")
+        sample_rate, full_audio = self.transcriber.get_full_audio()
+
+        if sample_rate and full_audio.size > 0:
+            full_audio = full_audio.flatten()
+
+            with wave.open(audio_path, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)  # 16-bit audio
+                wf.setframerate(sample_rate)
+                wf.writeframes((full_audio).astype(np.int16).tobytes())
+
+        # If we have a note, save it too
+        note_saved = ""
+        if self.current_note:
+            note_path = os.path.join(session_dir, "note.txt")
+            with open(note_path, "w") as f:
+                f.write(self.current_note)
+            note_saved = f"\nNote: {note_path}"
+
+        logger.info(f"Saved session files to {session_dir}")
+        return f"Session saved to: {session_dir}\nTranscript: {transcript_path}\nAudio: {audio_path}{note_saved}"
+
+    def save_complete_session(self, note_text):
+        """
+        Save a complete session with transcript, audio, and note in a single folder
+
+        Args:
+            note_text: The note text to save
+
+        Returns:
+            str: Status message about the save operation
+        """
+        if not self.transcriber.transcript_buffer:
+            return "Cannot save session: No transcript available"
+
+        if not note_text:
+            return "Cannot save note: Note is empty"
+
+        # Store the current note for future saves
+        self.current_note = note_text
+
+        # Create a session directory
+        session_id, session_dir = self.create_session_directory()
+
+        # Save transcript to the session directory
+        transcript_path = os.path.join(session_dir, "transcript.txt")
+        with open(transcript_path, "w") as f:
+            f.write(self.transcriber.transcript_buffer)
+
+        # Save audio to the session directory
+        audio_path = os.path.join(session_dir, "audio.wav")
+        sample_rate, full_audio = self.transcriber.get_full_audio()
+
+        if sample_rate and full_audio.size > 0:
+            full_audio = full_audio.flatten()
+
+            with wave.open(audio_path, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)  # 16-bit audio
+                wf.setframerate(sample_rate)
+                wf.writeframes((full_audio).astype(np.int16).tobytes())
+
+        # Save the note
+        note_path = os.path.join(session_dir, "note.txt")
+        with open(note_path, "w") as f:
+            f.write(note_text)
+
+        logger.info(f"Saved complete session to {session_dir}")
+        return f"Session saved to: {session_dir}\nTranscript: {transcript_path}\nAudio: {audio_path}\nNote: {note_path}"
 
     def reset_session_callback(self):
         """Function to reset the session"""
         self.transcriber.clear_buffers()
+        self.current_session_id = None
+        self.current_note = None
         # Return empty strings to clear transcript and note displays
         return (
             "",
@@ -147,24 +252,7 @@ class MedicalScribeApp:
 
     def save_note_callback(self, note_text):
         """Function to save the clinical note to a file"""
-        if not note_text:
-            return "No note to save"
-
-        # Create timestamp for unique filename
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = "saved_sessions"
-
-        # Create output directory if it doesn't exist
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # Save note to file
-        note_path = os.path.join(output_dir, f"note_{timestamp}.txt")
-        with open(note_path, "w") as f:
-            f.write(note_text)
-
-        logger.info(f"Saved clinical note to {note_path}")
-        return f"Note saved to: {note_path}"
+        return self.save_complete_session(note_text)
 
     def toggle_edit_mode(self, is_editing, note_content):
         """Function to toggle between view and edit modes for notes"""
@@ -182,6 +270,9 @@ class MedicalScribeApp:
 
     def save_edited_note(self, note_text):
         """Function to save edits made to notes"""
+        # Update current note with edited content
+        self.current_note = note_text
+
         return (
             False,
             note_text,
@@ -232,6 +323,9 @@ class MedicalScribeApp:
                         yield [note, gr.update(visible=False)]
                     else:
                         yield [note, gr.update(visible=False)]
+
+            # Store the generated note
+            self.current_note = note
         except Exception as e:
             logger.error(f"Error generating note: {e}")
             yield [f"Error generating note: {str(e)}", gr.update(visible=False)]
@@ -265,7 +359,20 @@ class MedicalScribeApp:
             with gr.Row():
                 # Left side (Input area)
                 with gr.Column(scale=2):
-                    # Model selection dropdowns
+                    audio = WebRTC(
+                        label="Stream",
+                        mode="send",
+                        modality="audio",
+                        height=200,
+                    )
+
+                    with gr.Row():
+                        finish_btn = gr.Button("Finish & Save Session")
+                        reset_btn = gr.Button("Reset Session")
+
+                    transcript = gr.Textbox(label="Transcript", interactive=False)
+
+                    # Model selection dropdowns moved below transcript
                     with gr.Row():
                         transcription_dropdown = gr.Dropdown(
                             choices=self.TRANSCRIPTION_MODELS,
@@ -280,20 +387,7 @@ class MedicalScribeApp:
 
                     change_models_btn = gr.Button("Change Models")
 
-                    audio = WebRTC(
-                        label="Stream",
-                        mode="send",
-                        modality="audio",
-                        height=200,
-                    )
-
-                    with gr.Row():
-                        finish_btn = gr.Button("Finish & Save Session")
-                        reset_btn = gr.Button("Reset Session")
-
-                    transcript = gr.Textbox(label="Transcript", interactive=False)
-
-                    # Status elements moved to bottom left
+                    # Status elements at bottom left
                     with gr.Row():
                         model_status = gr.Textbox(
                             label="Model Status",
