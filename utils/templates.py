@@ -43,12 +43,11 @@ DEFAULT_TEMPLATE = """## Patient Info
 SYSTEM_PROMPT = (
     "You are a medical assistant helping to format clinical notes. "
     "Create a structured and professional medical note based on the provided conversation transcript. "
-    "Format it with clear sections for patient information, chief complaint, history, "
-    "assessment, and plan. Use medical terminology appropriately. "
+    "Use medical terminology appropriately. "
     "Follow the structure of the template provided in the user message. "
     "The current date is automatically inserted. "
     "DO NOT make up or infer any information that is not explicitly discussed in the transcript. "
-    "If specific information is not mentioned in the conversation, leave that field blank or mark it as 'Not discussed'. "
+    "If specific information is not mentioned in the conversation, mark it as 'Not discussed'. "
     "Only include information that was actually discussed in the conversation. "
     "Do not output any explanations, instructions, or additional text - ONLY output the formatted medical note."
 )
