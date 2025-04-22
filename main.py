@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 class MedicalScribeApp:
     # Available models
     TRANSCRIPTION_MODELS = [
-        "nyrahealth/CrisperWhisper",
         "openai/whisper-large-v3-turbo",
         "openai/whisper-medium",
         "openai/whisper-small",
@@ -37,7 +36,7 @@ class MedicalScribeApp:
 
     def __init__(self):
         # Default models
-        self.current_transcription_model = "nyrahealth/CrisperWhisper"
+        self.current_transcription_model = "openai/whisper-large-v3-turbo"
         self.current_ollama_model = "gemma3:4b"
 
         self.default_template = get_template_with_date()
