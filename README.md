@@ -13,10 +13,7 @@ A real-time medical transcription and note generation application that combines 
 
 ## Demo
 
-https://github.com/kunwarsaaim/LocalMediScribe/raw/main/demos/demo.mp4
-
-<video src="https://github.com/kunwarsaaim/LocalMediScribe/raw/main/demos/demo.mp4" controls="controls" style="max-width: 730px;">
-</video>
+[![Demo Video](preview.png)](https://drive.google.com/file/d/1rMbxGR5J2DoNEQBh4KesZbWS3CahXF1W/view?usp=sharing)
 
 ## System Requirements
 
