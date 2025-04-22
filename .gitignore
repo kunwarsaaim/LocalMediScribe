@@ -1,5 +1,5 @@
 *.wav
-*.txt
+/saved_sessions/
 
 .DS_STORE
 __pycache__/

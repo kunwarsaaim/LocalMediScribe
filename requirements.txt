@@ -1,0 +1,5 @@
+fastrtc[vad, stt, tts]
+gradio>=5.24.0
+ollama
+transformers[torch]
+accelerate
